@@ -1,0 +1,201 @@
+
+---
+title: "Got Scammed?"
+output: html_document
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(sqldf)
+```
+
+First we will look at the Ohio fraud data. Here is a briefing on the set:
+
+Metropolitan Areas are defined by the Office of Management and Budget, and population estimates are based on 2018 U.S. Census figures. Metropolitan Areas are ranked based on the number of reports per 100,000 population.  Reports exclude state-specific data contributor reports.
+
+I did most of my editting in excel to the database.
+
+```{r, echo= FALSE}
+Ohiofraud <- read.csv("E:/Academics/DateAset_Blog/NovemberPost/Ohio_normalized.csv")
+```
+
+```
+Ohiofraud <- read.csv("Desktop:/Ohio_normalized.csv")
+```
+
+```{r, echo= TRUE}
+head(Ohiofraud)
+```
+
+```{r, results=Ohiofraud}
+knitr::kable((Ohiofraud <- Ohiofraud %>%
+  rename(metro_area_f=Metropolitan.Area)%>%
+  rename(reports=Reports.per.100K.Population) %>%
+  rename(state=State_Metro)), caption = "Changing the Column Names")
+```
+
+``` {r, results='axis'}
+knitr::kable(Ohiofraud, caption = "Ohio Fraud")
+```
+
+ Which cities have the highest number of incidents?
+
+``` {r, results='axis'}
+knitr::kable((Ohiofraud[1:3,] %>%
+  arrange(desc(reports))), caption ="Cities with the Highest Number of Incidents")
+```  
+
+ Cleveland with 714, Columbus with 705, and Dayton with 621
+
+ Where's the nasty Nati?
+
+```
+Ohiofraud %>%filter(str_detect(metro_area,"Cincinn")
+
+mean(Ohiofraud$reports)# 559.9375
+```
+
+ The nasty Nati is just above the average at 586 reports. Let see if Cincinnati falls within the upper interquartile range.
+
+``` {r, Ohiofraud$reports}
+summary(Ohiofraud$reports)
+```
+
+ Cincinnati is just under the 3rd Quartile which is 600. Was the average the best summary statistic to use? Let's see a visual of the data.
+
+ The scatterplot shows several points that are scattered about in what appear to be clusters.
+
+```{r}
+d <- Ohiofraud$reports
+
+View(d)
+
+qplot(Ohiofraud$reports,Ohiofraud$metro_area)
+```
+
+ Now let's also look at add a second column which will contain the data on id theft. I will need to revert to SQL for this query.
+
+```{r, echo=FALSE}
+Ohioidtheft <- read.csv("E:/Academics/DateAset_Blog/NovemberPost/Ohio_idtheft_BCNF.csv")
+```
+```
+Ohioidtheft <- read.csv("Desktop:/Ohio_idtheft_BCNF.csv")
+```
+```{r}
+View(Ohioidtheft)
+
+Ohioidtheft <- Ohioidtheft %>%
+  rename(metro_area_t=Metropolitan.Area)%>%
+  rename(reportsoftheft= X) %>%
+  rename(state=Reports.per.100K.Population)
+
+sqldf("SELECT *
+      FROM Ohioidtheft")
+```
+ Do we have a primary key? Is it unique, irreducible, and not null... There should be 16 rows in this next query.
+
+```
+sqldf("SELECT DISTINCT metro_area_f
+      FROM Ohiofraud")
+```
+
+ So the easiest way I know of as of now, is to sort based on my primary key and add the data that way. If I had more data, I would need to first create a database, but for our purposes, this is fine.
+
+```
+sqldf("SELECT *
+      FROM Ohiofraud f
+      LEFT JOIN Ohioidtheft t
+      ON metro_area.f = metro_area.t")#Error: No such column: metro_area.f?
+```
+
+ Since the SQL join statment isn't working. I will have to resort to the join function within...tidyverse. I am not going to show all of the queries I ran, but I used the sample queiries for the tidyverse package to figure out how to apply the same method to my dataset.
+
+ Using left join?
+
+```{r}
+View(Ohiofraud)
+View(Ohioidtheft)
+
+Ohio_reports <- Ohiofraud %>%
+left_join( Ohioidtheft, by=c("metro_area_f"="metro_area_t"))
+
+View(Ohio_reports)
+```
+ I need to remove a column and rename a column. For Simplicities sake we will call our collection of data 'r'
+
+```{r}
+r <- data.frame(Ohio_reports$metro_area_f, Ohio_reports$state.x, Ohio_reports$reports, Ohio_reports$reportsoftheft)
+View(r)
+
+View(
+r %>%
+  rename(metro_area= Ohio_reports.metro_area_f) %>%
+  rename(state=Ohio_reports.state.x) %>%
+  rename(fraud_reports=Ohio_reports.reports) %>%
+  rename(theft_reports=Ohio_reports.reportsoftheft)
+)
+
+r <- r %>%
+  rename(metro_area= Ohio_reports.metro_area_f) %>%
+  rename(state=Ohio_reports.state.x) %>%
+  rename(fraud_reports=Ohio_reports.reports) %>%
+  rename(theft_reports=Ohio_reports.reportsoftheft)
+
+View(r)
+```
+
+ Now we finally have our dataset to work with. Truly 80% of the work.
+
+```{r}
+rp <- ggplot(r, aes(r$metro_area, r$fraud_reports))
+
+rp+ geom_point(color = "blue")+coord_flip()
+
+rp2 <- ggplot(r, aes(r$metro_area, r$theft_reports))
+ 
+rp2 + geom_point(color ="red")+coord_flip()
+```
+
+ What is the correlation between the two variables?
+ 
+```{r}
+cor(r$theft_reports, r$fraud_reports)
+```
+```
+# 0.7238 
+```
+```{r}
+
+rp <- ggplot(r, aes(r$theft_reports, r$fraud_reports, colour = r$metro_area))
+
+rp+geom_point(mapping = aes(color=r$metro_area))+
+  labs(title = "The Imperfect High Fraud High Theft Relationship",
+         subtitle = "The relationship between fraud reports and theft reports.")
+
+```
+
+ As you can see there is somewhat of an upward trend. If the fraud reports increase, so do the theft reports. Although a definite outlier does seem to be Cleveland-Elyria.
+
+```{r}
+theft<- ggplot(r, aes(r$metro_area,r$theft_reports, colour = r$metro_area))
+
+theft+coord_flip()+geom_col()
+```
+
+ Clevland-Elyria sticks out like a sore thumb with 226 theft reports.
+
+
+```{r}
+fraud<- ggplot(r, aes(r$metro_area,r$fraud_reports, colour = r$metro_area))
+
+fraud+coord_flip()+geom_col()
+```
+ 
+ Clevland-ELyria also has the highest number of reports here too with 714 fraud repots.
+
+
+ Take a look at more data at FTC.gov/data. Check out their incredible Tableau vizzes here: https://www.ftc.gov/enforcement/data-visualizations/explore-data. 
+
+
+
